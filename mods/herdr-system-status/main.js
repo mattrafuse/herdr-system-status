@@ -9,15 +9,19 @@
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, spaces, theme, exec, props, openOverlay } from "herdr";
+import { agents, spaces, theme, exec, props, openOverlay, shared, setShared } from "herdr";
 
 const TICK = 5000; // sample cadence, ms
 const HISTORY = 60; // trend lines keep one sample per tick: 5 minutes
 const WARN = 90; // percent where CPU, RAM and GPU turn the message red
 const DISK_FREE_WARN = 10; // warn when free disk space drops below this %
+const STATE = "herdr-system-status"; // shared() key: the bar publishes, the popover reads
 
 export default class SystemStatus extends View {
   init(_props, cx) {
+    // A trends popup is a fresh copy of this mod: its own state is empty, so
+    // it only reads the snapshot the bar copy publishes — it never samples.
+    if (props()?.trends) return;
     this.prevCpu = null; // previous /proc/stat sample
     this.cpu = null; // busy percent 0..100, null until the second tick
     this.ram = null; // { pct, usedGb, totalGb }
@@ -49,7 +53,7 @@ export default class SystemStatus extends View {
           ["--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"]);
         const f = g.stdout.trim().split("\n")[0].split(",").map((s) => parseFloat(s));
         if (g.code === 0 && f.length >= 3 && !f.some(isNaN)) {
-          this.gpu = { pct: Math.round(f[0]), vramUsedGb: f[1] / 1024, vramTotalGb: f[2] / 1024 };
+          this.gpu = { pct: Math.round(f[0]), vramUsedGb: Math.round((f[1] / 1024) * 10) / 10, vramTotalGb: Math.round((f[2] / 1024) * 10) / 10 };
           this.gpuFails = 0;
           this.gpuNext = 0;
         } else this.gpuMiss();
@@ -64,6 +68,10 @@ export default class SystemStatus extends View {
     while (this.cpuHistory.length > HISTORY) this.cpuHistory.shift();
     while (this.gpuHistory.length > HISTORY) this.gpuHistory.shift();
 
+    setShared(STATE, {
+      cpu: this.cpu, ram: this.ram, disk: this.disk, gpu: this.gpu,
+      cpuHistory: this.cpuHistory, gpuHistory: this.gpuHistory,
+    });
     cx.notify();
   }
 
@@ -168,14 +176,16 @@ export default class SystemStatus extends View {
 
   renderTrends(cx) {
     const t = theme();
+    const s = shared(STATE) ?? {};
     const spark = (data, label) => v_flex().gap(4)
       .child(div().text_size(11).text_color(t.muted).child(label))
       .child(h_flex().h(28).gap(1).items_end().children(
         data.map((v) => div().w(3).h(Math.max(2, Math.round((v / 100) * 28))).rounded(1).bg(t.accent))));
     return v_flex().p(10).gap(10).bg(t.popover).border(1).border_color(t.border).rounded(8).w(280)
       .child(div().text_size(12).font_semibold().text_color(t.foreground).child("Last 5 minutes"))
-      .child(spark(this.cpuHistory, `CPU  ${this.cpu ?? "--"}%`))
-      .when(Boolean(this.gpu), (el) => el.child(spark(this.gpuHistory, `GPU  ${this.gpu.pct}%  ·  VRAM ${this.gpu.vramUsedGb}/${Math.round(this.gpu.vramTotalGb)} GB`)))
+      .when(!s.cpuHistory?.length, (el) => el.child(div().text_size(11).text_color(t.muted).child("Gathering samples…")))
+      .when(Boolean(s.cpuHistory?.length), (el) => el.child(spark(s.cpuHistory, `CPU  ${s.cpu ?? "--"}%`)))
+      .when(Boolean(s.gpu), (el) => el.child(spark(s.gpuHistory, `GPU  ${s.gpu.pct}%  ·  VRAM ${s.gpu.vramUsedGb}/${Math.round(s.gpu.vramTotalGb)} GB`)))
       .child(div().text_size(10.5).text_color(t.dim).child("Esc closes"));
   }
 }
