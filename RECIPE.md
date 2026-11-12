@@ -20,7 +20,7 @@ One 28px bar along the bottom of the window: `theme().chrome` background, a 1px 
 - RAM% is used of total (`MemTotal − MemAvailable`, falling back to `MemFree`). Disk% is used space on `/`. GPU% is utilization from `nvidia-smi`; its VRAM (used/total GB) appears only in the popover's label, never in the bar and never warned on.
 - Thresholds, hard-coded: CPU, RAM and GPU warn above 90%; disk warns below 10% free. Under a threshold the summary is muted; at or above, red.
 - Hover over the status message shows the tooltip "System status — click for CPU/GPU trend lines".
-- Clicking it opens a 300×170 popup, "Last 5 minutes": the CPU trend as 60 thin accent bars (3px, one per sample) and, when a GPU answered, the GPU trend the same way. Esc or a click outside closes it.
+- Clicking it opens a 300×170 popup anchored just above the status bar's right end, "Last 5 minutes": the CPU trend as up to 60 thin accent bars (3px, one per sample) and, when a GPU answered, the GPU trend the same way. Esc or a click outside closes it.
 - No keys, no commands: the mod is read-only. `keys.json` needs no changes.
 
 ## Built from
@@ -37,6 +37,7 @@ One 28px bar along the bottom of the window: `theme().chrome` background, a 1px 
 ## Watch out
 
 - `openOverlay` creates a **fresh copy** of the mod: its instance state is empty, so a popup that reads `this.cpuHistory` renders with no trend lines and no error anywhere. Route the data through `shared()` (the bar publishes, the popup reads), and skip sampling in the popup copy — its `init` returns early on `props()?.trends`.
+- A popup opened `at: "pointer"` while the pointer sits on the bottom status bar is clipped off the window's bottom edge — it exists (`herdr-app status` lists it) but nothing is visible. Anchor it with `window.viewport_size()` (the gpui-kit global, not `herdr`'s `window()`, which has no viewport) instead.
 - `.when(condition, branch)` takes **one** branch function. Passing a second as an else silently renders nothing — the first build's summary vanished with no error anywhere. Use two `.when` calls with complementary conditions.
 - `herdr-app check` does not lay out the mod or run deferred work, so it passes a mod that renders empty; try it in the app before calling it done.
 - Trend lines are divs (thin bars), not paths: `PathBuilder` builds a `Path` and `window.paint_path(path, color)` paints one, but there is no element factory that consumes a `Path` outside that one window method, and bars are simpler.

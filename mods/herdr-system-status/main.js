@@ -145,7 +145,15 @@ export default class SystemStatus extends View {
   }
 
   openTrends() {
-    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300, height: 170 });
+    // Anchored just above the status bar: at the pointer it opens under the
+    // click and clips off the bottom edge of the window.
+    let at;
+    try {
+      const v = window.viewport_size();
+      at = { x: Math.max(8, v.width - 316), y: Math.max(8, v.height - 210) };
+    } catch { /* no viewport: fall back to the pointer */ }
+    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300, height: 170,
+      ...(at ? { at } : {}) });
   }
 
   render(cx) {
@@ -168,6 +176,7 @@ export default class SystemStatus extends View {
         .when(needs > 0, (el) => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`))))
       .child(div().flex_1())
       .child(h_flex().id("sys-status").gap(6).items_center().cursor_pointer().whitespace_nowrap()
+        .on_click(() => this.openTrends())
         .tooltip("System status — click for CPU/GPU trend lines")
         .when(warns.length > 0, (el) => el.text_color(t.blocked).child(warns.join("  ·  ")))
         .when(warns.length === 0 && this.summary(), (el) => el.child(div().child(this.summary())))
