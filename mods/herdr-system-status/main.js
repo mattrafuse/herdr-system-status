@@ -146,13 +146,14 @@ export default class SystemStatus extends View {
 
   openTrends() {
     // Anchored just above the status bar: at the pointer it opens under the
-    // click and clips off the bottom edge of the window.
+    // click and clips off the bottom edge of the window. 190px of height fits
+    // the content (title, two spark rows, the Esc hint); 170 clipped it.
     let at;
     try {
       const v = window.viewport_size();
-      at = { x: Math.max(8, v.width - 316), y: Math.max(8, v.height - 210) };
+      at = { x: Math.max(8, v.width - 316), y: Math.max(8, v.height - 228) };
     } catch { /* no viewport: fall back to the pointer */ }
-    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300, height: 170,
+    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300, height: 190,
       ...(at ? { at } : {}) });
   }
 
