@@ -49,11 +49,21 @@ export default class SystemStatus extends View {
     // GPU only when its tool answers; after three misses back off a minute.
     if (Date.now() > this.gpuNext) {
       try {
-        const g = await exec("nvidia-smi",
-          ["--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"]);
-        const f = g.stdout.trim().split("\n")[0].split(",").map((s) => parseFloat(s));
+        const g = await exec("nvidia-smi", [
+          "--query-gpu=utilization.gpu,memory.used,memory.total",
+          "--format=csv,noheader,nounits",
+        ]);
+        const f = g.stdout
+          .trim()
+          .split("\n")[0]
+          .split(",")
+          .map((s) => parseFloat(s));
         if (g.code === 0 && f.length >= 3 && !f.some(isNaN)) {
-          this.gpu = { pct: Math.round(f[0]), vramUsedGb: Math.round((f[1] / 1024) * 10) / 10, vramTotalGb: Math.round((f[2] / 1024) * 10) / 10 };
+          this.gpu = {
+            pct: Math.round(f[0]),
+            vramUsedGb: Math.round((f[1] / 1024) * 10) / 10,
+            vramTotalGb: Math.round((f[2] / 1024) * 10) / 10,
+          };
           this.gpuFails = 0;
           this.gpuNext = 0;
         } else this.gpuMiss();
@@ -69,8 +79,12 @@ export default class SystemStatus extends View {
     while (this.gpuHistory.length > HISTORY) this.gpuHistory.shift();
 
     setShared(STATE, {
-      cpu: this.cpu, ram: this.ram, disk: this.disk, gpu: this.gpu,
-      cpuHistory: this.cpuHistory, gpuHistory: this.gpuHistory,
+      cpu: this.cpu,
+      ram: this.ram,
+      disk: this.disk,
+      gpu: this.gpu,
+      cpuHistory: this.cpuHistory,
+      gpuHistory: this.gpuHistory,
     });
     cx.notify();
   }
@@ -109,7 +123,9 @@ export default class SystemStatus extends View {
 
   readDisk(out) {
     const cols = out.trim().split("\n").pop().split(/\s+/);
-    const totalK = parseInt(cols[1], 10), usedK = parseInt(cols[2], 10), availK = parseInt(cols[3], 10);
+    const totalK = parseInt(cols[1], 10),
+      usedK = parseInt(cols[2], 10),
+      availK = parseInt(cols[3], 10);
     if (totalK > 0) {
       this.disk = {
         pctUsed: Math.round((100 * usedK) / totalK),
@@ -145,70 +161,138 @@ export default class SystemStatus extends View {
   }
 
   openTrends() {
-    // No width/height in the spec: the overlay sizes itself to the content —
-    // the root v_flex's w(280) sets the width. The anchor is computed from the
-    // content's height so the popup always lands just above the status bar:
-    // at the pointer it opens under the click and clips off the bottom edge.
+    // Width must be explicit: Herdr sizes a spec-less overlay by measuring the
+    // mod without these props — which renders the status bar (~420px), not
+    // this view — so the popup comes out 120px too wide. The height is omitted
+    // and adapts to the content. The anchor keeps the popup just above the
+    // status bar: at the pointer it clips off the bottom edge.
     const est = 20 + 57 + 13 + (this.gpu ? 30 + 1 + 57 : 10); // p + CPU row + hint, plus gaps + divider + GPU row
     let at;
     try {
       const v = window.viewport_size();
       at = { x: Math.max(8, v.width - 316), y: Math.max(8, v.height - est - 38) };
-    } catch { /* no viewport: fall back to the pointer */ }
-    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, ...(at ? { at } : {}) });
+    } catch {
+      /* no viewport: fall back to the pointer */
+    }
+    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300,
+      ...(at ? { at } : {}) });
   }
 
-  render(cx) {
-    if (props()?.trends) return this.renderTrends(cx);
-    return this.renderBar(cx);
+  render(_cx) {
+    if (props()?.trends) return this.renderTrends();
+    return this.renderBar();
   }
 
-  renderBar(cx) {
+  renderBar() {
     const t = theme();
     const space = spaces().find((s) => s.active);
     const list = agents();
     const needs = list.filter((a) => a.status === "blocked").length;
     const warns = this.warns();
-    const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
-    return h_flex().size_full().px(14).gap(16).items_center().bg(t.chrome).border_t(1).border_color(t.border)
-      .text_size(11.8).text_color(t.muted)
+    const label = (icon, text) =>
+      h_flex()
+        .gap(6)
+        .items_center()
+        .child(svg(`mods/workspace-chrome/${icon}.svg`).size(13))
+        .child(text);
+    return h_flex()
+      .size_full()
+      .px(14)
+      .gap(16)
+      .items_center()
+      .bg(t.chrome)
+      .border_t(1)
+      .border_color(t.border)
+      .text_size(11.8)
+      .text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
       .when(Boolean(space?.branch), (el) => el.child(label("branch", space.branch)))
-      .child(h_flex().gap(6).items_center().child(div().size(6).rounded(3).bg(t.dim)).child(`${list.length} agents`)
-        .when(needs > 0, (el) => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`))))
+      .child(
+        h_flex()
+          .gap(6)
+          .items_center()
+          .child(div().size(6).rounded(3).bg(t.dim))
+          .child(`${list.length} agents`)
+          .when(needs > 0, (el) => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`))),
+      )
       .child(div().flex_1())
-      .child(h_flex().id("sys-status").gap(6).items_center().cursor_pointer().whitespace_nowrap()
-        .on_click(() => this.openTrends())
-        .tooltip("System status — click for CPU/GPU trend lines")
-        .when(warns.length > 0, (el) => el.text_color(t.blocked).child(warns.join("  ·  ")))
-        .when(warns.length === 0 && this.summary(), (el) => el.child(div().child(this.summary())))
-        .when(warns.length === 0 && !this.summary(), (el) => el.child("…")));
+      .child(
+        h_flex()
+          .id("sys-status")
+          .gap(6)
+          .items_center()
+          .cursor_pointer()
+          .whitespace_nowrap()
+          .on_click(() => this.openTrends())
+          .tooltip("System status — click for CPU/GPU trend lines")
+          .when(warns.length > 0, (el) => el.text_color(t.blocked).child(warns.join("  ·  ")))
+          .when(warns.length === 0 && this.summary(), (el) => el.child(div().child(this.summary())))
+          .when(warns.length === 0 && !this.summary(), (el) => el.child("…")),
+      );
   }
 
-  renderTrends(cx) {
+  renderTrends() {
     const t = theme();
     const s = shared(STATE) ?? {};
     // The chart well: the popover's color blended 35% toward the theme's
     // background — slightly darker in a dark theme, slightly lighter in a
     // light one, so the chart reads as an inset without hard-coding a color.
     const mix = (a, b, f) => {
-      const h = (c) => /^#[0-9a-fA-F]{6}$/.test(c) ? [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)) : null;
-      const A = h(a), B = h(b);
-      return A && B ? "#" + [0, 1, 2].map((i) =>
-        Math.round(A[i] * (1 - f) + B[i] * f).toString(16).padStart(2, "0")).join("") : t.hover;
+      const h = (c) => (/^#[0-9a-fA-F]{6}$/.test(c) ? [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)) : null);
+      const A = h(a),
+        B = h(b);
+      return A && B
+        ? "#" +
+            [0, 1, 2]
+              .map((i) =>
+                Math.round(A[i] * (1 - f) + B[i] * f)
+                  .toString(16)
+                  .padStart(2, "0"),
+              )
+              .join("")
+        : t.hover;
     };
     const well = mix(t.popover, t.background, 0.35);
-    const chart = (data) => div().p(6).rounded(6).bg(well)
-      .child(h_flex().h(28).gap(1).items_end().children(
-        data.map((v) => div().w(3).h(Math.max(2, Math.round((v / 100) * 28))).rounded(1).bg(t.accent))));
-    const spark = (data, label) => v_flex().gap(4)
-      .child(div().text_size(11).text_color(t.muted).child(label))
-      .child(chart(data));
-    return v_flex().p(10).gap(10).bg(t.popover).border(1).border_color(t.border).rounded(8).w(280)
-      .when(!s.cpuHistory?.length, (el) => el.child(div().text_size(11).text_color(t.muted).child("Gathering samples…")))
+    const chart = (data) =>
+      div()
+        .p(6)
+        .rounded(6)
+        .bg(well)
+        .child(
+          h_flex()
+            .h(28)
+            .gap(1)
+            .items_end()
+            .children(
+              data.map((v) =>
+                div()
+                  .w(3)
+                  .h(Math.max(2, Math.round((v / 100) * 28)))
+                  .rounded(1)
+                  .bg(t.accent),
+              ),
+            ),
+        );
+    const spark = (data, label) =>
+      v_flex().gap(4).child(div().text_size(11).text_color(t.muted).child(label)).child(chart(data));
+    return v_flex()
+      .p(10)
+      .gap(10)
+      .bg(t.popover)
+      .border(1)
+      .border_color(t.border)
+      .rounded(8)
+      .w(280)
+      .when(!s.cpuHistory?.length, (el) =>
+        el.child(div().text_size(11).text_color(t.muted).child("Gathering samples…")),
+      )
       .when(Boolean(s.cpuHistory?.length), (el) => el.child(spark(s.cpuHistory, `CPU  ${s.cpu ?? "--"}%`)))
       .when(Boolean(s.gpu), (el) => el.child(div().h(1).bg(t.border)))
-      .when(Boolean(s.gpu), (el) => el.child(spark(s.gpuHistory, `GPU  ${s.gpu.pct}%  ·  VRAM ${s.gpu.vramUsedGb}/${Math.round(s.gpu.vramTotalGb)} GB`)))
+      .when(Boolean(s.gpu), (el) =>
+        el.child(
+          spark(s.gpuHistory, `GPU  ${s.gpu.pct}%  ·  VRAM ${s.gpu.vramUsedGb}/${Math.round(s.gpu.vramTotalGb)} GB`),
+        ),
+      )
       .child(div().text_size(10.5).text_color(t.dim).child("Esc closes"));
   }
 }
