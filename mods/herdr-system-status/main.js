@@ -149,7 +149,7 @@ export default class SystemStatus extends View {
     // the root v_flex's w(280) sets the width. The anchor is computed from the
     // content's height so the popup always lands just above the status bar:
     // at the pointer it opens under the click and clips off the bottom edge.
-    const est = 20 + 40 + 15 + 45 + (this.gpu ? 45 : 0) + 13; // p + gaps + title + CPU row + GPU row + hint
+    const est = 20 + 57 + 13 + (this.gpu ? 30 + 1 + 57 : 10); // p + CPU row + hint, plus gaps + divider + GPU row
     let at;
     try {
       const v = window.viewport_size();
@@ -188,14 +188,26 @@ export default class SystemStatus extends View {
   renderTrends(cx) {
     const t = theme();
     const s = shared(STATE) ?? {};
-    const spark = (data, label) => v_flex().gap(4)
-      .child(div().text_size(11).text_color(t.muted).child(label))
+    // The chart well: the popover's color blended 35% toward the theme's
+    // background — slightly darker in a dark theme, slightly lighter in a
+    // light one, so the chart reads as an inset without hard-coding a color.
+    const mix = (a, b, f) => {
+      const h = (c) => /^#[0-9a-fA-F]{6}$/.test(c) ? [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)) : null;
+      const A = h(a), B = h(b);
+      return A && B ? "#" + [0, 1, 2].map((i) =>
+        Math.round(A[i] * (1 - f) + B[i] * f).toString(16).padStart(2, "0")).join("") : t.hover;
+    };
+    const well = mix(t.popover, t.background, 0.35);
+    const chart = (data) => div().p(6).rounded(6).bg(well)
       .child(h_flex().h(28).gap(1).items_end().children(
         data.map((v) => div().w(3).h(Math.max(2, Math.round((v / 100) * 28))).rounded(1).bg(t.accent))));
+    const spark = (data, label) => v_flex().gap(4)
+      .child(div().text_size(11).text_color(t.muted).child(label))
+      .child(chart(data));
     return v_flex().p(10).gap(10).bg(t.popover).border(1).border_color(t.border).rounded(8).w(280)
-      .child(div().text_size(12).font_semibold().text_color(t.foreground).child("Last 5 minutes"))
       .when(!s.cpuHistory?.length, (el) => el.child(div().text_size(11).text_color(t.muted).child("Gathering samples…")))
       .when(Boolean(s.cpuHistory?.length), (el) => el.child(spark(s.cpuHistory, `CPU  ${s.cpu ?? "--"}%`)))
+      .when(Boolean(s.gpu), (el) => el.child(div().h(1).bg(t.border)))
       .when(Boolean(s.gpu), (el) => el.child(spark(s.gpuHistory, `GPU  ${s.gpu.pct}%  ·  VRAM ${s.gpu.vramUsedGb}/${Math.round(s.gpu.vramTotalGb)} GB`)))
       .child(div().text_size(10.5).text_color(t.dim).child("Esc closes"));
   }

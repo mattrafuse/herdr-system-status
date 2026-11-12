@@ -20,7 +20,7 @@ One 28px bar along the bottom of the window: `theme().chrome` background, a 1px 
 - RAM% is used of total (`MemTotal − MemAvailable`, falling back to `MemFree`). Disk% is used space on `/`. GPU% is utilization from `nvidia-smi`; its VRAM (used/total GB) appears only in the popover's label, never in the bar and never warned on.
 - Thresholds, hard-coded: CPU, RAM and GPU warn above 90%; disk warns below 10% free. Under a threshold the summary is muted; at or above, red.
 - Hover over the status message shows the tooltip "System status — click for CPU/GPU trend lines".
-- Clicking it opens a popup that sizes itself to its content (300px wide), anchored just above the status bar's right end, "Last 5 minutes": the CPU trend as up to 60 thin accent bars (3px, one per sample) and, when a GPU answered, the GPU trend the same way. Esc or a click outside closes it.
+- Clicking it opens a popup that sizes itself to its content (300px wide), anchored just above the status bar's right end: each trend — the CPU one, and the GPU one when a GPU answered — is its label above up to 60 thin accent bars (3px, one per sample) sitting in a rounded chart well. The GPU row is separated from the CPU one by a 1px `theme().border` divider. Esc or a click outside closes it.
 - No keys, no commands: the mod is read-only. `keys.json` needs no changes.
 
 ## Built from
@@ -32,6 +32,7 @@ One 28px bar along the bottom of the window: `theme().chrome` background, a 1px 
 - Programs it runs through `exec`, once per tick: `cat /proc/stat`; `awk` over `/proc/meminfo` printing `MemTotal`, `MemAvailable`, `MemFree`; `df -kP /`; and `nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits` (only when past its retry gate).
 - Instance state: the previous `/proc/stat` sample (for the CPU delta), 60-sample CPU and GPU histories, a consecutive-failure count and a retry timestamp for `nvidia-smi` (three misses → back off 60 s; a later success brings the GPU row back and clears the gate).
 - The popover is the same mod re-rendered: `openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, at: <computed anchor> })` — no `width`/`height`, so the overlay sizes itself to the content (the trends root's `w(280)` plus padding sets the width). The anchor is computed from `window.viewport_size()` minus the content's estimated height so the popup lands just above the status bar; `render` checks `props()?.trends` and draws the trends view instead of the bar. Popups close themselves on Esc or an outside click, so the overlay needs no close button.
+- The chart well is the popover color blended 35% toward `theme().background` by a small `mix()` helper (hex parse + per-channel lerp, falling back to `theme().hover` when a color isn't 6-digit hex). That's "slightly darker" in a dark theme and slightly lighter in a light one, so it never hard-codes a color; the well is `rounded(6)` with `p(6)`, and the bars inside keep their own 28px area.
 - The trend data travels through shared state: every tick the bar copy publishes a snapshot with `setShared("herdr-system-status", {...})` — current cpu/ram/disk/gpu plus both histories — and the popup copy reads it back with `shared("herdr-system-status")`. `setShared` re-renders every mod, which is what keeps the popup's lines growing while it is open.
 
 ## Watch out
