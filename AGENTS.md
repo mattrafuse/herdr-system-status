@@ -11,8 +11,11 @@ A Herdr mod: the window's status bar with system metrics, a VS Code–style stat
 
 ## Working on it
 
-- **The app runs the installed copy, not this repo.** After editing files here, sync:
-  `cp -r mods/herdr-system-status ~/.config/herdr-app/mods/`
+- **The app runs the installed copy, not this repo.** With `watch-mod.sh` running
+  (from the repo root: `setsid nohup ./watch-mod.sh >> /tmp/herdr-mod-sync.log 2>&1 &`),
+  saving any file under `mods/herdr-system-status/` syncs to the installed copy within
+  a second and hot-reloads there — edit the repo, the window follows. Without it, sync
+  by hand: `cp -r mods/herdr-system-status ~/.config/herdr-app/mods/`
   Saving hot-reloads the running copy, which resets its state — the popup shows `Gathering samples…` until the second 5 s tick, and trend history starts over.
 - Check after every change: `herdr-app check ~/.config/herdr-app/mods/herdr-system-status` — loads and renders the mod once, exits nonzero with the exact error on failure. It does not lay out the mod or run deferred work, so also try it in the app; `herdr-app status` lists runtime errors under `errors`.
 - The API truth is `herdr.d.ts` and `gpui-kit.d.ts` next to `~/.config/herdr-app/AGENTS.md`. The app rewrites them on every start; never edit them.
@@ -21,7 +24,7 @@ A Herdr mod: the window's status bar with system metrics, a VS Code–style stat
 
 - `.when(cond, branch)` takes **one** branch function; a second passed as an else silently renders nothing. Use two `.when` calls with complementary conditions.
 - `openOverlay` creates a **fresh copy** of the mod with empty instance state. Trend data reaches the popup through `shared("herdr-system-status")` — the bar copy publishes a snapshot every tick, the popup copy reads it. The popup copy's `init` returns early on `props()?.trends` and never samples.
-- `openOverlay` with no `width` measures the mod *without* the trends props — which renders the status bar (~420px) — so the popup comes out ~120px too wide. Pass `width: 300`; `height` may be omitted, it adapts to the content.
+- `openOverlay` with no `width` measures the mod _without_ the trends props — which renders the status bar (~420px) — so the popup comes out ~120px too wide. Pass `width: 300`; `height` may be omitted, it adapts to the content.
 - A popup `at: "pointer"` opened from the bottom status bar is clipped off the window's bottom edge (it exists — `herdr-app status` lists it under `overlays` — but nothing is visible). Anchor it with the gpui-kit global `window.viewport_size()` instead; `herdr`'s `window()` has no viewport.
 - The popup's anchor estimates the content's height in `openTrends` (`est`). Change the content, change `est`, or the popup overlaps the status bar.
 

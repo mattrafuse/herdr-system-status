@@ -18,22 +18,23 @@ One 28px bar along the bottom of the window: `theme().chrome` background, a 1px 
 
 - Samples every 5 seconds. CPU% is the busy fraction of `/proc/stat` between consecutive samples; the first tick has no delta, so it shows `…`.
 - RAM% is used of total (`MemTotal − MemAvailable`, falling back to `MemFree`). Disk% is used space on `/`. GPU% is utilization from `nvidia-smi`; its VRAM (used/total GB) appears only in the popover's label, never in the bar and never warned on.
+- The popover also names the hardware: the CPU's `model name` (read once from `/proc/cpuinfo`) and the GPU's `name` (from `nvidia-smi`), each as a small muted line under its chart, truncated with an ellipsis when too long. Neither appears in the bar.
 - Thresholds, hard-coded: CPU, RAM and GPU warn above 90%; disk warns below 10% free. Under a threshold the summary is muted; at or above, red.
 - Hover over the status message shows the tooltip "System status — click for CPU/GPU trend lines".
-- Clicking it opens a popup that sizes itself to its content (300px wide), anchored just above the status bar's right end: each trend — the CPU one, and the GPU one when a GPU answered — is its label above up to 60 thin accent bars (3px, one per sample) sitting in a rounded chart well. The GPU row is separated from the CPU one by a 1px `theme().border` divider. Esc or a click outside closes it.
+- Clicking it opens a popup that sizes itself to its content (300px wide), anchored just above the status bar's right end: each trend — the CPU one, and the GPU one when a GPU answered — is its label above up to 60 thin accent bars (3px, one per sample) sitting in a rounded chart well, with the chip's make/model as a 10px muted line under the well when it is known. The GPU row is separated from the CPU one by a 1px `theme().border` divider. Esc or a click outside closes it.
 - No keys, no commands: the mod is read-only. `keys.json` needs no changes.
 
 ## Built from
 
-- `mods/herdr-system-status/` with two files: `mod.json` = `{ "place": "none" }` (the layout places it; on its own the mod is invisible) and `main.js`, which default-exports one `View` class.
+- `mods/herdr-system-status/` with three files: `mod.json` = `{ "place": "none" }` (the layout places it; on its own the mod is invisible), `main.js`, which default-exports one `View` class, and `snapshot.d.ts` — the declared type of the shared snapshot, read by the type check and editors only; the runtime loads JavaScript.
 - Layout change (one line): in `layouts/<name>.json`, the status block's `"content"` becomes `{ "mod": "herdr-system-status" }` where it said `"workspace-status"`.
 - Imports: `View`, `div`, `svg` from `gpui-kit`; `h_flex`, `v_flex` from `gpui-base`; `agents`, `spaces`, `theme`, `exec`, `props`, `openOverlay` from `herdr`.
 - Shipped art: `mods/workspace-chrome/monitor.svg`, `server.svg`, `branch.svg` — drawn with `svg(...).size(13)`, tinted by the surrounding text color.
-- Programs it runs through `exec`, once per tick: `cat /proc/stat`; `awk` over `/proc/meminfo` printing `MemTotal`, `MemAvailable`, `MemFree`; `df -kP /`; and `nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits` (only when past its retry gate).
-- Instance state: the previous `/proc/stat` sample (for the CPU delta), 60-sample CPU and GPU histories, a consecutive-failure count and a retry timestamp for `nvidia-smi` (three misses → back off 60 s; a later success brings the GPU row back and clears the gate).
-- The popover is the same mod re-rendered: `openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300, at: <computed anchor> })` — the **width must be explicit**: Herdr sizes a spec-less overlay by measuring the mod *without* these props, which renders the status bar (~420px), so a spec-less popup comes out 120px too wide. The height is omitted and adapts to the content (~198px with both rows). The anchor is computed from `window.viewport_size()` minus the content's estimated height so the popup lands just above the status bar; `render` checks `props()?.trends` and draws the trends view instead of the bar. Popups close themselves on Esc or an outside click, so the overlay needs no close button.
+- Programs it runs through `exec`, once per tick: `cat /proc/stat`; `awk` over `/proc/meminfo` printing `MemTotal`, `MemAvailable`, `MemFree`; `df -kP /`; and `nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,name --format=csv,noheader,nounits` (only when past its retry gate). One extra exec on the first tick only: `grep -m1 "model name" /proc/cpuinfo` for the CPU's make/model.
+- Instance state: the previous `/proc/stat` sample (for the CPU delta), the CPU model string (read once, then cached), 60-sample CPU and GPU histories, a consecutive-failure count and a retry timestamp for `nvidia-smi` (three misses → back off 60 s; a later success brings the GPU row back and clears the gate).
+- The popover is the same mod re-rendered: `openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300, at: <computed anchor> })` — the **width must be explicit**: Herdr sizes a spec-less overlay by measuring the mod _without_ these props, which renders the status bar (~420px), so a spec-less popup comes out 120px too wide. The height is omitted and adapts to the content (~198px with both rows). The anchor is computed from `window.viewport_size()` minus the content's estimated height so the popup lands just above the status bar; `render` checks `props()?.trends` and draws the trends view instead of the bar. Popups close themselves on Esc or an outside click, so the overlay needs no close button.
 - The chart well is the popover color blended 35% toward `theme().background` by a small `mix()` helper (hex parse + per-channel lerp, falling back to `theme().hover` when a color isn't 6-digit hex). That's "slightly darker" in a dark theme and slightly lighter in a light one, so it never hard-codes a color; the well is `rounded(6)` with `p(6)`, and the bars inside keep their own 28px area.
-- The trend data travels through shared state: every tick the bar copy publishes a snapshot with `setShared("herdr-system-status", {...})` — current cpu/ram/disk/gpu plus both histories — and the popup copy reads it back with `shared("herdr-system-status")`. `setShared` re-renders every mod, which is what keeps the popup's lines growing while it is open.
+- The trend data travels through shared state: every tick the bar copy publishes a snapshot with `setShared("herdr-system-status", {...})` — current cpu (and its model string)/ram/disk/gpu (with its model) plus both histories — and the popup copy reads it back with `shared("herdr-system-status")`, cast to `SystemStatusSnapshot` (declared in `snapshot.d.ts`). `setShared` re-renders every mod, which is what keeps the popup's lines growing while it is open.
 
 ## Watch out
 
@@ -45,15 +46,17 @@ One 28px bar along the bottom of the window: `theme().chrome` background, a 1px 
 - CPU/RAM/disk assume Linux `/proc` and `df`. On another platform those three are silently absent; GPU still appears wherever `nvidia-smi` answers.
 - Disk is measured on `/` only — other mounts are out of scope.
 - The bar's left half deliberately copies the shipped `workspace-status` behavior (including its `keys()`-aware palette hint being left out); both mods in the config at once would double-render the same facts, so point the status block at one of them.
-- The popup's height adapts to its content, so adding a third trend line just makes it taller — nothing to resize. The width is pinned at 300 (see Built from for why it can't be inferred). The anchor's content-height estimate (in `openTrends`) does need the new row's height added, or the popup overlaps the status bar.
+- The popup's height adapts to its content, so adding a third trend line just makes it taller — nothing to resize. The width is pinned at 300 (see Built from for why it can't be inferred). The anchor's content-height estimate (in `openTrends`) does need each row's height added — including the ~17px a known model line adds — or the popup overlaps the status bar.
 
 ## Tooling
 
 - Formatting and linting use `oxfmt` and `oxlint` (installed globally): `oxfmt .` to format, `oxfmt --check .` to verify, `oxlint` to lint. Configs live in `.oxfmtrc.json` (120-col print width, object literals keep their hand-written wrapping) and `.oxlintrc.json`.
+- Type checking runs `tsc --checkJs` over `main.js` with no output: `npx -y -p typescript tsc -p mods/herdr-system-status/jsconfig.json`. The runtime loads only JavaScript, so the types live in JSDoc comments inside `main.js` (parameters, fields, the `theme()` colors cast to gpui-kit's `Color`) and in `snapshot.d.ts` (the shared snapshot both copies agree on). It must pass with zero errors.
 - The runtime generates `mods/herdr-system-status/gpui-kit.d.ts` and `jsconfig.json` on every run; the declaration file is gitignored and excluded from both tools. Keep `jsconfig.json` — it is written once and then yours.
 
 ## Done when
 
+- `npx -y -p typescript tsc -p mods/herdr-system-status/jsconfig.json` passes with no errors.
 - `herdr-app check ~/.config/herdr-app/mods/herdr-system-status` passes.
 - Within ~10 s of starting, the bar shows machine and agents on the left and `CPU …% · RAM …% · Disk …%` on the right (GPU too when `nvidia-smi` answers).
 - Temporarily setting a threshold to 0 turns the summary red with only that metric; restoring it turns the summary muted again.

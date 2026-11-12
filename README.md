@@ -22,8 +22,7 @@ A drop-in replacement for Herdr's status bar: everything the shipped bar shows â
 2. Point your layout's status bar at it. In `~/.config/herdr-app/layouts/<your-layout>.json`, find the `status` block and change its content:
 
    ```json
-   { "id": "status", "type": "block", "size": { "px": 28 },
-     "content": { "mod": "herdr-system-status" } }
+   { "id": "status", "type": "block", "size": { "px": 28 }, "content": { "mod": "herdr-system-status" } }
    ```
 
    It replaces the shipped `workspace-status` â€” both at once would draw the same facts twice.
