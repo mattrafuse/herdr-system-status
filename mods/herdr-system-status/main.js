@@ -292,7 +292,6 @@ export default class SystemStatus extends View {
         el.child(
           spark(s.gpuHistory, `GPU  ${s.gpu.pct}%  ·  VRAM ${s.gpu.vramUsedGb}/${Math.round(s.gpu.vramTotalGb)} GB`),
         ),
-      )
-      .child(div().text_size(10.5).text_color(t.dim).child("Esc closes"));
+      );
   }
 }
