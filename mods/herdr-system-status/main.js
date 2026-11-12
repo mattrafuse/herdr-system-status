@@ -145,16 +145,17 @@ export default class SystemStatus extends View {
   }
 
   openTrends() {
-    // Anchored just above the status bar: at the pointer it opens under the
-    // click and clips off the bottom edge of the window. 190px of height fits
-    // the content (title, two spark rows, the Esc hint); 170 clipped it.
+    // No width/height in the spec: the overlay sizes itself to the content —
+    // the root v_flex's w(280) sets the width. The anchor is computed from the
+    // content's height so the popup always lands just above the status bar:
+    // at the pointer it opens under the click and clips off the bottom edge.
+    const est = 20 + 40 + 15 + 45 + (this.gpu ? 45 : 0) + 13; // p + gaps + title + CPU row + GPU row + hint
     let at;
     try {
       const v = window.viewport_size();
-      at = { x: Math.max(8, v.width - 316), y: Math.max(8, v.height - 228) };
+      at = { x: Math.max(8, v.width - 316), y: Math.max(8, v.height - est - 38) };
     } catch { /* no viewport: fall back to the pointer */ }
-    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, width: 300, height: 190,
-      ...(at ? { at } : {}) });
+    openOverlay({ kind: "popup", mod: "herdr-system-status", props: { trends: true }, ...(at ? { at } : {}) });
   }
 
   render(cx) {
