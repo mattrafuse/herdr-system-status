@@ -19,6 +19,27 @@ const WARN = 90; // percent where CPU, RAM and GPU turn the message red
 const DISK_FREE_WARN = 10; // warn when free disk space drops below this %
 const STATE = "herdr-system-status"; // shared() key: the bar publishes, the popover reads
 
+// The trend labels name the hardware inline, so the longer of the two sets the
+// popup's width. Both copies must agree on it — openOverlay takes the width up
+// front, from the bar copy's state — so the labels and the width live here.
+const CHAR_W = 6.1; // ≈ average glyph width at the labels' 11px text
+/**
+ * @param {number | null} cpu
+ * @param {string | null} cpuModel
+ */
+const cpuLabel = (cpu, cpuModel) => `CPU  ${cpu ?? "--"}%` + (cpuModel ? `  ·  ${cpuModel}` : "");
+/** @param {NonNullable<SystemStatusSnapshot["gpu"]>} gpu */
+const gpuLabel = (gpu) =>
+  `GPU  ${gpu.pct}%  ·  VRAM ${gpu.vramUsedGb}/${Math.round(gpu.vramTotalGb)} GB` +
+  (gpu.model ? `  ·  ${gpu.model}` : "");
+/**
+ * @param {number | null} cpu
+ * @param {string | null} cpuModel
+ * @param {SystemStatusSnapshot["gpu"]} gpu
+ */
+const popupWidth = (cpu, cpuModel, gpu) =>
+  Math.round(Math.max(240, Math.max(cpuLabel(cpu, cpuModel).length, gpu ? gpuLabel(gpu).length : 0) * CHAR_W)) + 22; // + p(10)×2 and the 1px border
+
 export default class SystemStatus extends View {
   /**
    * @param {import("gpui-shell").Props | undefined} _props
@@ -202,18 +223,20 @@ export default class SystemStatus extends View {
   openTrends() {
     // Width must be explicit: Herdr sizes a spec-less overlay by measuring the
     // mod without these props — which renders the status bar (~420px), not
-    // this view — so the popup comes out 120px too wide. The height is omitted
-    // and adapts to the content. The anchor keeps the popup just above the
-    // status bar: at the pointer it clips off the bottom edge.
-    // Each model line is ~13px of text plus its 4px gap above.
-    /** @param {string | null} m */
-    const sub = (m) => (m ? 17 : 0);
-    const est = 20 + 57 + 13 + sub(this.cpuModel) + (this.gpu ? 30 + 1 + 57 + sub(this.gpu.model) : 10); // p + CPU row + hint, plus gaps + divider + GPU row
+    // this view — so the popup comes out 120px too wide. It follows the longer
+    // of the two trend labels (popupWidth above); the graph stretches or
+    // compacts to fill whatever width that gives. The height is omitted and
+    // adapts to the content. The anchor keeps the popup just above the status
+    // bar: at the pointer it clips off the bottom edge.
+    const width = popupWidth(this.cpu, this.cpuModel, this.gpu);
 
     let at;
     try {
       const v = window.viewport_size();
-      at = { x: Math.max(8, v.width - 316), y: Math.max(8, v.height - est - 38) };
+      // Height estimate: p(10)×2 + border, per row a 13px label + 2px gap +
+      // 40px chart, and between the rows a 4px gap + 1px divider + 4px gap.
+      const est = this.gpu ? 141 : 77;
+      at = { x: Math.max(8, v.width - width - 16), y: Math.max(8, v.height - est - 38) };
     } catch {
       /* no viewport: fall back to the pointer */
     }
@@ -222,7 +245,7 @@ export default class SystemStatus extends View {
       kind: "popup",
       mod: "herdr-system-status",
       props: { trends: true },
-      width: 300,
+      width,
       ...(at ? { at } : {}),
     });
   }
@@ -324,55 +347,53 @@ export default class SystemStatus extends View {
         .p(6)
         .rounded(6)
         .bg(well)
+        .w_full()
         .child(
           h_flex()
             .h(28)
+            .w_full()
             .gap(1)
             .items_end()
             .children(
-              data.map((v) =>
-                div()
-                  .w(3)
-                  .h(Math.max(2, Math.round((v / 100) * 28)))
-                  .rounded(1)
-                  .bg(t.accent),
-              ),
+              // Always HISTORY columns, samples filling in from the left as
+              // they accumulate: every bar keeps the same width from the first
+              // sample to a full five minutes, instead of shrinking as the
+              // row fills. The empty slots are invisible.
+              [
+                ...data.map((v) =>
+                  div()
+                    .flex_1() // the row's width — set by the labels — stretches or compacts them
+                    .h(Math.max(2, Math.round((v / 100) * 28)))
+                    .rounded(1)
+                    .bg(t.accent),
+                ),
+                ...Array(HISTORY - Math.min(data.length, HISTORY))
+                  .fill(null)
+                  .map(() => div().flex_1()),
+              ],
             ),
         );
 
-        /**
+    /**
      * @param {number[]} data
      * @param {string} label
-     * @param {string | null | undefined} model
      */
-    const spark = (data, label, model) =>
-      v_flex()
-        .gap(2)
-        .child(div().text_size(11).text_color(t.muted).child(label))
-        .child(chart(data))
-        .when(Boolean(model), (el) => el.child(div().truncate().text_size(10).text_color(t.muted).child(model)));
+    const spark = (data, label) =>
+      v_flex().gap(2).child(div().truncate().text_size(11).text_color(t.muted).child(label)).child(chart(data));
 
-        return v_flex()
+    return v_flex()
       .p(10)
       .gap(4)
       .bg(t.popover)
       .border(1)
       .border_color(t.border)
       .rounded(8)
-      .w(280)
+      .w(popupWidth(s.cpu, s.cpuModel, s.gpu))
       .when(!s.cpuHistory?.length, (el) =>
         el.child(div().text_size(11).text_color(t.muted).child("Gathering samples…")),
       )
-      .when(Boolean(s.cpuHistory?.length), (el) => el.child(spark(s.cpuHistory, `CPU  ${s.cpu ?? "--"}%`, s.cpuModel)))
+      .when(Boolean(s.cpuHistory?.length), (el) => el.child(spark(s.cpuHistory, cpuLabel(s.cpu, s.cpuModel))))
       .when(Boolean(s.gpu), (el) => el.child(div().h(1).bg(well)))
-      .when(Boolean(s.gpu), (el) =>
-        el.child(
-          spark(
-            s.gpuHistory,
-            `GPU  ${s.gpu.pct}%  ·  VRAM ${s.gpu.vramUsedGb}/${Math.round(s.gpu.vramTotalGb)} GB`,
-            s.gpu.model,
-          ),
-        ),
-      );
+      .when(Boolean(s.gpu), (el) => el.child(spark(s.gpuHistory, gpuLabel(s.gpu))));
   }
 }
